@@ -1109,35 +1109,134 @@ exports.getDashboardRecord = catchAsync(async (req, res) => {
     }
 });
 
-// Get User per week 
+// Get User per week
+// exports.listTrendingUserByWeek = catchAsync(async (req, res, next) => {
+//     try {
+//         const today = new Date();
+//         today.setHours(23, 59, 59, 999);
+
+//         const sevenDaysAgo = new Date();
+//         sevenDaysAgo.setDate(today.getDate() - 6);
+//         sevenDaysAgo.setHours(0, 0, 0, 0);
+
+//         const result = await Company_Employee.aggregate([
+//             {
+//                 $match: {
+//                     created_at: {
+//                         $gte: sevenDaysAgo,
+//                         $lte: today
+//                     }
+//                 }
+//             },
+//             {
+//                 $group: {
+//                     _id: {
+//                         $dateToString: { format: "%Y-%m-%d", date: "$created_at" }
+//                     },
+//                     count: { $sum: 1 }
+//                 }
+//             },
+//             {
+//                 $sort: { _id: 1 } // sort by date ascending
+//             },
+//             {
+//                 $project: {
+//                     _id: 0,
+//                     date: "$_id",
+//                     count: 1
+//                 }
+//             }
+//         ]);
+
+//         return res.status(200).json({
+//             status: "success",
+//             msg: "Employee grouped by week",
+//             data: result
+//         });
+//     } catch (error) {
+//         console.error(error);
+//         return res.status(500).json({
+//             status: "error",
+//             msg: error.message,
+//             data: []
+//         });
+//     }
+// });
+
+// Get User per week/month/6month/alltime
 exports.listTrendingUserByWeek = catchAsync(async (req, res, next) => {
     try {
+        const { range } = req.query;
         const today = new Date();
         today.setHours(23, 59, 59, 999);
 
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(today.getDate() - 6);
-        sevenDaysAgo.setHours(0, 0, 0, 0);
+        let matchCondition = {};
+        let groupFormat = "";
 
-        const result = await Company_Employee.aggregate([
-            {
-                $match: {
-                    created_at: {
-                        $gte: sevenDaysAgo,
-                        $lte: today
-                    }
+        if (range === "years") {
+            groupFormat = "%Y";
+            // no match condition, includes all data
+        } else if (range === "months") {
+            const sixMonthsAgo = new Date();
+            sixMonthsAgo.setMonth(today.getMonth() - 5);
+            sixMonthsAgo.setDate(1);
+            sixMonthsAgo.setHours(0, 0, 0, 0);
+
+            matchCondition = {
+                created_at: {
+                    $gte: sixMonthsAgo,
+                    $lte: today
                 }
-            },
+            };
+            groupFormat = "%Y-%m"; // Group by month
+        } else if (range === "days") {
+            const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            matchCondition = {
+                created_at: {
+                    $gte: firstDayOfMonth,
+                    $lte: today
+                }
+            };
+            groupFormat = "%Y-%m-%d"; // Group by day
+        } else if (range === "7days") {
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(today.getDate() - 6);
+            sevenDaysAgo.setHours(0, 0, 0, 0);
+
+            matchCondition = {
+                created_at: {
+                    $gte: sevenDaysAgo,
+                    $lte: today
+                }
+            };
+            groupFormat = "%Y-%m-%d"; // Group by day
+        } else {
+            return res.status(400).json({
+                status: "error",
+                msg: "Invalid range parameter"
+            });
+        }
+
+        const pipeline = [];
+
+        if (Object.keys(matchCondition).length > 0) {
+            pipeline.push({ $match: matchCondition });
+        }
+
+        pipeline.push(
             {
                 $group: {
                     _id: {
-                        $dateToString: { format: "%Y-%m-%d", date: "$created_at" }
+                        $dateToString: {
+                            format: groupFormat,
+                            date: "$created_at"
+                        }
                     },
                     count: { $sum: 1 }
                 }
             },
             {
-                $sort: { _id: 1 } // sort by date ascending
+                $sort: { _id: 1 }
             },
             {
                 $project: {
@@ -1146,11 +1245,36 @@ exports.listTrendingUserByWeek = catchAsync(async (req, res, next) => {
                     count: 1
                 }
             }
-        ]);
+        );
+
+        const response = await Company_Employee.aggregate(pipeline);
+        // Add missing dates logic only for '7days'
+        let result = response;
+
+        if (range === "7days") {
+            const dateMap = new Map();
+            response.forEach(item => {
+                dateMap.set(item.date, item.count);
+            });
+
+            result = [];
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(today.getDate() - i);
+                date.setHours(0, 0, 0, 0);
+
+                const formattedDate = date.toISOString().split('T')[0];
+
+                result.push({
+                    date: formattedDate,
+                    count: dateMap.get(formattedDate) || 0
+                });
+            }
+        }
 
         return res.status(200).json({
             status: "success",
-            msg: "Employee grouped by week",
+            msg: `Employee grouped by ${range}`,
             data: result
         });
     } catch (error) {
@@ -1163,35 +1287,137 @@ exports.listTrendingUserByWeek = catchAsync(async (req, res, next) => {
     }
 });
 
-// Get Company per week 
+// Get Company per week
+// exports.listTrendingCompanyByWeek = catchAsync(async (req, res, next) => {
+//     try {
+//         const today = new Date();
+//         today.setHours(23, 59, 59, 999);
+
+//         const sevenDaysAgo = new Date();
+//         sevenDaysAgo.setDate(today.getDate() - 6);
+//         sevenDaysAgo.setHours(0, 0, 0, 0);
+
+//         const result = await Company.aggregate([
+//             {
+//                 $match: {
+//                     created_at: {
+//                         $gte: sevenDaysAgo,
+//                         $lte: today
+//                     }
+//                 }
+//             },
+//             {
+//                 $group: {
+//                     _id: {
+//                         $dateToString: { format: "%Y-%m-%d", date: "$created_at" }
+//                     },
+//                     count: { $sum: 1 }
+//                 }
+//             },
+//             {
+//                 $sort: { _id: 1 } // sort by date ascending
+//             },
+//             {
+//                 $project: {
+//                     _id: 0,
+//                     date: "$_id",
+//                     count: 1
+//                 }
+//             }
+//         ]);
+
+//         return res.status(200).json({
+//             status: "success",
+//             msg: "Companies grouped by week",
+//             data: result
+//         });
+
+//     } catch (error) {
+//         console.error(error);
+//         return res.status(500).json({
+//             status: "error",
+//             msg: error.message,
+//             data: []
+//         });
+//     }
+// });
+
+// Get Company per week/month/6month/alltime
 exports.listTrendingCompanyByWeek = catchAsync(async (req, res, next) => {
     try {
+        const { range } = req.query;
+
         const today = new Date();
         today.setHours(23, 59, 59, 999);
 
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(today.getDate() - 6);
-        sevenDaysAgo.setHours(0, 0, 0, 0);
+        let matchCondition = {};
+        let groupFormat = "";
 
-        const result = await Company.aggregate([
-            {
-                $match: {
-                    created_at: {
-                        $gte: sevenDaysAgo,
-                        $lte: today
-                    }
+        if (range === "years") {
+            groupFormat = "%Y";
+            // All data, no date filter
+        } else if (range === "months") {
+            const sixMonthsAgo = new Date();
+            sixMonthsAgo.setMonth(today.getMonth() - 5);
+            sixMonthsAgo.setDate(1);
+            sixMonthsAgo.setHours(0, 0, 0, 0);
+
+            matchCondition = {
+                created_at: {
+                    $gte: sixMonthsAgo,
+                    $lte: today
                 }
-            },
+            };
+            groupFormat = "%Y-%m"; // month-wise
+        } else if (range === "days") {
+            const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            matchCondition = {
+                created_at: {
+                    $gte: firstDayOfMonth,
+                    $lte: today
+                }
+            };
+            groupFormat = "%Y-%m-%d"; // day-wise
+        } else if (range === "7days") {
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(today.getDate() - 6);
+            sevenDaysAgo.setHours(0, 0, 0, 0);
+
+            matchCondition = {
+                created_at: {
+                    $gte: sevenDaysAgo,
+                    $lte: today
+                }
+            };
+            groupFormat = "%Y-%m-%d"; // day-wise
+        } else {
+            return res.status(400).json({
+                status: "error",
+                msg: "Invalid range parameter",
+                data: []
+            });
+        }
+
+        const pipeline = [];
+
+        if (Object.keys(matchCondition).length > 0) {
+            pipeline.push({ $match: matchCondition });
+        }
+
+        pipeline.push(
             {
                 $group: {
                     _id: {
-                        $dateToString: { format: "%Y-%m-%d", date: "$created_at" }
+                        $dateToString: {
+                            format: groupFormat,
+                            date: "$created_at"
+                        }
                     },
                     count: { $sum: 1 }
                 }
             },
             {
-                $sort: { _id: 1 } // sort by date ascending
+                $sort: { _id: 1 }
             },
             {
                 $project: {
@@ -1200,11 +1426,36 @@ exports.listTrendingCompanyByWeek = catchAsync(async (req, res, next) => {
                     count: 1
                 }
             }
-        ]);
+        );
+
+        const response = await Company.aggregate(pipeline);
+        // Add missing dates logic only for '7days'
+        let result = response;
+
+        if (range === "7days") {
+            const dateMap = new Map();
+            response.forEach(item => {
+                dateMap.set(item.date, item.count);
+            });
+
+            result = [];
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(today.getDate() - i);
+                date.setHours(0, 0, 0, 0);
+
+                const formattedDate = date.toISOString().split('T')[0];
+
+                result.push({
+                    date: formattedDate,
+                    count: dateMap.get(formattedDate) || 0
+                });
+            }
+        }
 
         return res.status(200).json({
             status: "success",
-            msg: "Companies grouped by week",
+            msg: `Companies grouped by ${range}`,
             data: result
         });
 
@@ -1218,72 +1469,200 @@ exports.listTrendingCompanyByWeek = catchAsync(async (req, res, next) => {
     }
 });
 
+
 // Get AI per week 
+// exports.listTrendingAIByWeek = catchAsync(async (req, res, next) => {
+//     try {
+//         const today = new Date();
+//         today.setHours(23, 59, 59, 999);
+
+//         const sevenDaysAgo = new Date();
+//         sevenDaysAgo.setDate(today.getDate() - 6); // Include today
+//         sevenDaysAgo.setHours(0, 0, 0, 0);
+
+//         const result = await AI_Tracking.aggregate([
+//             {
+//                 $match: {
+//                     created_at: {
+//                         $gte: sevenDaysAgo,
+//                         $lte: today
+//                     }
+//                 }
+//             },
+//             {
+//                 $group: {
+//                     _id: {
+//                         date: {
+//                             $dateToString: {
+//                                 format: "%Y-%m-%d",
+//                                 date: "$created_at"
+//                             }
+//                         },
+//                         ai_platform_id: "$ai_platform_id"
+//                     },
+//                     count: { $sum: 1 }
+//                 }
+//             },
+//             {
+//                 $lookup: {
+//                     from: "ai_platforms",
+//                     localField: "_id.ai_platform_id",
+//                     foreignField: "_id",
+//                     as: "platform"
+//                 }
+//             },
+//             {
+//                 $unwind: {
+//                     path: "$platform",
+//                     preserveNullAndEmptyArrays: true
+//                 }
+//             },
+//             {
+//                 $project: {
+//                     _id: 0,
+//                     date: "$_id.date",
+//                     count: 1,
+//                     name: "$platform.domain_name"
+//                 }
+//             },
+//             {
+//                 $sort: {
+//                     date: 1,
+//                     name: 1
+//                 }
+//             }
+//         ]);
+
+//         return res.status(200).json({
+//             status: "success",
+//             msg: "AI platform usage in the last 7 days",
+//             data: result
+//         });
+
+//     } catch (error) {
+//         console.error(error);
+//         return res.status(500).json({
+//             status: "error",
+//             msg: error.message,
+//             data: []
+//         });
+//     }
+// });
+
+// Get AI per week/month/6month/alltime
 exports.listTrendingAIByWeek = catchAsync(async (req, res, next) => {
     try {
+        const { range } = req.query;
+
         const today = new Date();
         today.setHours(23, 59, 59, 999);
 
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(today.getDate() - 6); // Include today
-        sevenDaysAgo.setHours(0, 0, 0, 0);
+        let matchCondition = {};
+        let groupFormat = "";
 
-        const result = await AI_Tracking.aggregate([
-            {
-                $match: {
-                    created_at: {
-                        $gte: sevenDaysAgo,
-                        $lte: today
-                    }
+        if (range === "years") {
+            groupFormat = "%Y";
+            // All data
+        } else if (range === "months") {
+            const sixMonthsAgo = new Date();
+            sixMonthsAgo.setMonth(today.getMonth() - 5);
+            sixMonthsAgo.setDate(1);
+            sixMonthsAgo.setHours(0, 0, 0, 0);
+
+            matchCondition = {
+                created_at: {
+                    $gte: sixMonthsAgo,
+                    $lte: today
                 }
-            },
+            };
+            groupFormat = "%Y-%m";
+        } else if (range === "days") {
+            const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            matchCondition = {
+                created_at: {
+                    $gte: firstDayOfMonth,
+                    $lte: today
+                }
+            };
+            groupFormat = "%Y-%m-%d";
+        } else if (range === "7days") {
+            const sevenDaysAgo = new Date();
+            sevenDaysAgo.setDate(today.getDate() - 6);
+            sevenDaysAgo.setHours(0, 0, 0, 0);
+
+            matchCondition = {
+                created_at: {
+                    $gte: sevenDaysAgo,
+                    $lte: today
+                }
+            };
+            groupFormat = "%Y-%m-%d";
+        } else {
+            return res.status(400).json({
+                status: "error",
+                msg: "Invalid range parameter",
+                data: []
+            });
+        }
+
+        const pipeline = [];
+
+        if (Object.keys(matchCondition).length > 0) {
+            pipeline.push({ $match: matchCondition });
+        }
+
+        pipeline.push(
             {
                 $group: {
                     _id: {
-                        date: {
-                            $dateToString: {
-                                format: "%Y-%m-%d",
-                                date: "$created_at"
-                            }
-                        },
-                        ai_platform_id: "$ai_platform_id"
+                        $dateToString: {
+                            format: groupFormat,
+                            date: "$created_at"
+                        }
                     },
                     count: { $sum: 1 }
                 }
             },
             {
-                $lookup: {
-                    from: "ai_platforms",
-                    localField: "_id.ai_platform_id",
-                    foreignField: "_id",
-                    as: "platform"
-                }
-            },
-            {
-                $unwind: {
-                    path: "$platform",
-                    preserveNullAndEmptyArrays: true
-                }
-            },
-            {
                 $project: {
                     _id: 0,
-                    date: "$_id.date",
-                    count: 1,
-                    name: "$platform.domain_name"
+                    date: "$_id",
+                    count: 1
                 }
             },
             {
-                $sort: {
-                    date: 1,
-                    name: 1
-                }
+                $sort: { date: 1 }
             }
-        ]);
+        );
+
+        const response = await AI_Tracking.aggregate(pipeline);
+        // Add missing dates logic only for '7days'
+        let result = response;
+
+        if (range === "7days") {
+            const dateMap = new Map();
+            response.forEach(item => {
+                dateMap.set(item.date, item.count);
+            });
+
+            result = [];
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(today.getDate() - i);
+                date.setHours(0, 0, 0, 0);
+
+                const formattedDate = date.toISOString().split('T')[0];
+
+                result.push({
+                    date: formattedDate,
+                    count: dateMap.get(formattedDate) || 0
+                });
+            }
+        }
 
         return res.status(200).json({
             status: "success",
-            msg: "AI platform usage in the last 7 days",
+            msg: `AI usage grouped by ${range}`,
             data: result
         });
 
